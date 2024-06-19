@@ -32,6 +32,11 @@ using namespace text;
 #define TASKER_MAX_TEXT_LEN 32
 #define TASKER_MAX_TIMES_CNT 5
 
+/* 
+ * Struct Time
+ * -----------
+ * Represents a time of day with hour and minute components.
+ */
 struct Time {
     uint8_t hour;
     uint8_t minute;
@@ -41,6 +46,12 @@ struct Time {
         : hour(hour), minute(minute) {}
 } __attribute__((packed));
 
+/* 
+ * Class Tasker
+ * ------------
+ * Represents a task manager for scheduling tasks based on real-time clock events.
+ * This class provides functionality for setting and getting the real-time clock.
+ */
 class Tasker {
  public:
     static const char *TAG;
@@ -51,33 +62,60 @@ class Tasker {
     /// Get the real time clock
     time::RealTimeClock *get_time() const { return time_; }
     
-
+    /// The real time clock
     time::RealTimeClock *time_;
 };
 
+/* 
+ * Class Schedule
+ * -------------
+ * Represents a schedule for triggering events based on days of the week and times.
+ * This class is used in conjunction with Tasker to manage scheduling tasks.
+ */
 class Schedule : public Component, public Parented<Tasker> {
-// TODO Organize public/protected and later move out data to struct
 public:
     static const char *TAG;
 
+    /// Text components where the user can modify the schedule
     Text* days_of_week_text;
     Text* times_text;
 
     // TODO Optimize to keep odd/even inside the same storage byte as days
-    bool odd : 1;
-    bool even : 1;
-    union {
-        struct {
-            bool mon : 1;
-            bool tue : 1;
-            bool wed : 1;
-            bool thu : 1;
-            bool fri : 1;
-            bool sat : 1;
-            bool sun : 1;
-        } day;
-        uint8_t raw;
+    // bool odd : 1;
+    // bool even : 1;
+    
+    struct {
+        bool is_oddeven : 1;
+        union {
+            struct {
+                bool mon : 1;
+                bool tue : 1;
+                bool wed : 1;
+                bool thu : 1;
+                bool fri : 1;
+                bool sat : 1;
+                bool sun : 1;
+            } day;
+            struct {
+                bool odd : 1;
+                bool even : 1;
+            } oddeven;
+            uint8_t raw;
+        };
     } days;
+    
+    // union {
+    //     struct {
+    //         bool mon : 1;
+    //         bool tue : 1;
+    //         bool wed : 1;
+    //         bool thu : 1;
+    //         bool fri : 1;
+    //         bool sat : 1;
+    //         bool sun : 1;
+    //     } day;
+    //     uint8_t raw;
+    // } days;
     Time time[TASKER_MAX_TIMES_CNT];
     uint8_t time_cnt;
 
@@ -85,6 +123,7 @@ public:
         days.raw = 0;
     }
 
+    /// Component overrides
     float get_setup_priority() const override { return setup_priority::DATA; }
     void setup() override;
     void loop() override;
@@ -102,23 +141,42 @@ public:
     Trigger<> *get_trigger() const { return this->trigger_; }
 
 protected:
+    /// Keep track of the last second, to detect minute change
     time_t last_sec_;
-
-    void on_days_of_week_state_changed(const std::string& days_of_week);
-    void on_times_state_changed(const std::string& times);
-    void check_trigger(int day_of_week, uint8_t hour, uint8_t minute);
-    bool check_day_of_week_match(int day_of_week);
-    bool check_time_match(uint8_t hour, uint8_t minute);
-
     Trigger<> *trigger_ = new Trigger<>();
+
+    /// Days of week changed from text component
+    void on_days_of_week_state_changed(const std::string& days_of_week);
+
+    /// Times changed from text component
+    void on_times_state_changed(const std::string& times);
+
+    /// Check if this shedule have triggered
+    void check_trigger(int day_of_week, uint8_t hour, uint8_t minute);
+
+    /// Check if the schedule matches this week day
+    bool check_day_of_week_match(int day_of_week);
+
+    /// Check if the schedule matches this time
+    bool check_time_match(uint8_t hour, uint8_t minute);
 };
 
+/* 
+ * Class TaskerText
+ * ----------------
+ * Represents a text component for use in Tasker.
+ * Extends the Component and text::Text classes.
+ */
 class TaskerText : public Component, public text::Text {
 public:
+    /// Component overrides
     void setup() override;
+
+    /// Text have changed
     void control(const std::string& state);
 
 protected:
+    /// Preferences for saving the current text value persistently
     ESPPreferenceObject pref_;
 };
 

@@ -24,21 +24,23 @@ const std::unordered_map<std::string, int> day_mapping = {
 };
 
 void populate_days(Schedule& schedule, const std::vector<int> &day_values) {
-    schedule.even = false;
-    schedule.odd = false;
     schedule.days.raw = 0;
 
     if (day_values[0] == -1) {
-        schedule.odd = true;
+        schedule.days.oddeven.odd = true;
+        schedule.days.is_oddeven = true;
     } else if (day_values[0] == -2) {
-        schedule.even = true;
+        schedule.days.oddeven.even = true;
+        schedule.days.is_oddeven = true;
     } else if (day_values[0] == -3) {
         // Set all days
-        schedule.days.raw = 0x7F;
+        schedule.days.raw = 0xFE;
+        schedule.days.is_oddeven = false;
     } else {
+        schedule.days.is_oddeven = false;
         for (int day : day_values) {
             // Set the corresponding bit
-            schedule.days.raw |= (1 << day); 
+            schedule.days.raw |= (1 << (day + 1)); 
         }        
     }
 }
@@ -73,16 +75,21 @@ void Schedule::dump() const {
     // TODO Add name param?
     //ESP_LOGD(TAG, "Schedule ID: %s", get_id());
     ESP_LOGD(TAG, "Days of Week: %s", days_of_week_text->state.c_str());
-    ESP_LOGD(TAG, "Odd: %d", odd);
-    ESP_LOGD(TAG, "Even: %d", even);
+    ESP_LOGD(TAG, "isOddEven: %d", days.is_oddeven);
+    if (days.is_oddeven) {
+        ESP_LOGD(TAG, "Odd: %d", days.oddeven.odd);
+        ESP_LOGD(TAG, "Even: %d", days.oddeven.even);
+    } else {
+        ESP_LOGD(TAG, "Mon: %d", days.day.mon);
+        ESP_LOGD(TAG, "Tue: %d", days.day.tue);
+        ESP_LOGD(TAG, "Wed: %d", days.day.wed);
+        ESP_LOGD(TAG, "Thu: %d", days.day.thu);
+        ESP_LOGD(TAG, "Fri: %d", days.day.fri);
+        ESP_LOGD(TAG, "Sat: %d", days.day.sat);
+        ESP_LOGD(TAG, "Sun: %d", days.day.sun);
+    }
     // TODO loop and map
-    ESP_LOGD(TAG, "Mon: %d", days.day.mon);
-    ESP_LOGD(TAG, "Tue: %d", days.day.tue);
-    ESP_LOGD(TAG, "Wed: %d", days.day.wed);
-    ESP_LOGD(TAG, "Thu: %d", days.day.thu);
-    ESP_LOGD(TAG, "Fri: %d", days.day.fri);
-    ESP_LOGD(TAG, "Sat: %d", days.day.sat);
-    ESP_LOGD(TAG, "Sun: %d", days.day.sun);
+
     ESP_LOGD(TAG, "Times: %s", times_text->state.c_str());
     for (int i = 0; i < time_cnt; i++) {
          ESP_LOGD(TAG, "Time[%d]: %02d:%02d", i, time[i].hour, time[i].minute);
@@ -97,9 +104,11 @@ void Schedule::check_trigger(int day_of_week, uint8_t hour, uint8_t minute) {
 }
 
 bool Schedule::check_day_of_week_match(int day_of_week) {
-        return (odd && day_of_week % 2 == 1) || 
-            (even && day_of_week % 2 == 0) ||
-            (1 << day_of_week) & days.raw;
+    if (days.is_oddeven) {
+        return (days.oddeven.odd && day_of_week % 2 == 1) || (days.oddeven.even && day_of_week % 2 == 0);
+    } else {
+        return (1 << (day_of_week + 1)) & days.raw;
+    }
 }
 
 bool Schedule::check_time_match(uint8_t hour, uint8_t minute) {
