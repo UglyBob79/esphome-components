@@ -104,23 +104,12 @@ public:
         };
     } days;
     
-    // union {
-    //     struct {
-    //         bool mon : 1;
-    //         bool tue : 1;
-    //         bool wed : 1;
-    //         bool thu : 1;
-    //         bool fri : 1;
-    //         bool sat : 1;
-    //         bool sun : 1;
-    //     } day;
-    //     uint8_t raw;
-    // } days;
     Time time[TASKER_MAX_TIMES_CNT];
     uint8_t time_cnt;
 
     Schedule() : time_cnt(0) {
-        days.raw = 0;
+        // Default to all days, as the days of week text field is optional
+        days.raw = 0xFE;
     }
 
     /// Component overrides

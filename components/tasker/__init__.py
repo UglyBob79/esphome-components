@@ -61,9 +61,10 @@ async def to_code(config):
         await cg.register_component(schedule, schedule_conf)
         await cg.register_parented(schedule, var)
 
-        days_of_week_text = await text.new_text(schedule_conf.get(CONF_DAYS_OF_WEEK))
-        await cg.register_component(days_of_week_text, schedule_conf.get(CONF_DAYS_OF_WEEK))
-        cg.add(schedule.set_days_of_week_text(days_of_week_text))
+        if CONF_DAYS_OF_WEEK in schedule_conf:
+            days_of_week_text = await text.new_text(schedule_conf.get(CONF_DAYS_OF_WEEK))
+            await cg.register_component(days_of_week_text, schedule_conf.get(CONF_DAYS_OF_WEEK))
+            cg.add(schedule.set_days_of_week_text(days_of_week_text))
 
         times_text = await text.new_text(schedule_conf.get(CONF_TIMES))
         await cg.register_component(times_text, schedule_conf.get(CONF_TIMES))
