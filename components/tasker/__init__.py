@@ -1,6 +1,6 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
-from esphome.components import text
+from esphome.components import text, switch
 from esphome import core
 from esphome import automation
 from esphome.components import time
@@ -16,6 +16,7 @@ from esphome.const import (
 
 # Additional config options
 CONF_SCHEDULES = "schedules"
+CONF_ENABLE = "enable"
 
 # Automatically load components if the user hasn’t added them manually
 AUTO_LOAD = [ "switch", "text", "time" ]
@@ -24,13 +25,19 @@ tasker_ns = cg.esphome_ns.namespace('tasker')
 Tasker = tasker_ns.class_('Tasker')
 Schedule = tasker_ns.class_('Schedule', cg.Component)
 TaskerText = tasker_ns.class_("TaskerText", text.Text, cg.Component)
+TaskerSwitch = tasker_ns.class_("TaskerSwitch", switch.Switch, cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(Tasker),
         cv.GenerateID(CONF_TIME_ID): cv.use_id(time.RealTimeClock),
         cv.Required(CONF_SCHEDULES): cv.ensure_list({
-            cv.Required(CONF_ID): cv.declare_id(Schedule), 
+            cv.Required(CONF_ID): cv.declare_id(Schedule),
+            cv.Optional(CONF_ENABLE): switch.SWITCH_SCHEMA.extend(
+                {
+                    cv.GenerateID(): cv.declare_id(TaskerSwitch),
+                }
+            ),
             cv.Optional(CONF_DAYS_OF_WEEK): text.TEXT_SCHEMA.extend(
                 {
                     cv.GenerateID(): cv.declare_id(TaskerText),
@@ -60,6 +67,11 @@ async def to_code(config):
         schedule = cg.new_Pvariable(schedule_conf[CONF_ID])
         await cg.register_component(schedule, schedule_conf)
         await cg.register_parented(schedule, var)
+
+        if CONF_ENABLE in schedule_conf:
+            enable_switch = await switch.new_switch(schedule_conf.get(CONF_ENABLE))
+            await cg.register_component(enable_switch, schedule_conf.get(CONF_ENABLE))
+            cg.add(schedule.set_enable_switch(enable_switch))
 
         if CONF_DAYS_OF_WEEK in schedule_conf:
             days_of_week_text = await text.new_text(schedule_conf.get(CONF_DAYS_OF_WEEK))

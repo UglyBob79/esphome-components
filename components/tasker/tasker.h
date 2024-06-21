@@ -21,16 +21,19 @@ or connect to: http://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 #include "esphome/core/time.h"
 #include "esphome/core/automation.h"
 
+#include "esphome/components/switch/switch.h"
 #include "esphome/components/text/text.h"
 #include "esphome/components/time/real_time_clock.h"
 
 namespace esphome {
 namespace tasker {
 
+using namespace switch_;
 using namespace text;
 
 #define TASKER_MAX_TEXT_LEN 32
 #define TASKER_MAX_TIMES_CNT 5
+#define TASKER_ALL_DAYS_MASK 0x7F
 
 /* 
  * Struct Time
@@ -76,14 +79,9 @@ class Schedule : public Component, public Parented<Tasker> {
 public:
     static const char *TAG;
 
-    /// Text components where the user can modify the schedule
-    Text* days_of_week_text;
-    Text* times_text;
+    bool enabled;
 
-    // TODO Optimize to keep odd/even inside the same storage byte as days
-    // bool odd : 1;
-    // bool even : 1;
-    
+    // TODO This will take up two bytes, but could perhaps use just one
     struct {
         bool is_oddeven : 1;
         union {
@@ -102,14 +100,18 @@ public:
             } oddeven;
             uint8_t raw;
         };
-    } days;
+    } __attribute__((packed)) days;
     
     Time time[TASKER_MAX_TIMES_CNT];
     uint8_t time_cnt;
 
     Schedule() : time_cnt(0) {
+        // Enable schedule by default
+        enabled = true;
+
         // Default to all days, as the days of week text field is optional
-        days.raw = 0xFE;
+        days.raw = TASKER_ALL_DAYS_MASK;
+        days.is_oddeven = false;
     }
 
     /// Component overrides
@@ -119,6 +121,9 @@ public:
     void dump_config() override;
 
     void dump() const;
+
+    /// Sets the enable switch component from yaml
+    void set_enable_switch(Switch *enable_switch);
 
     /// Sets the days of week text component from yaml
     void set_days_of_week_text(Text* days_of_week_text);
@@ -130,10 +135,20 @@ public:
     Trigger<> *get_trigger() const { return this->trigger_; }
 
 protected:
+    /// Switch component to enable/disable the schedule
+    Switch* enable_switch;
+
+    /// Text components where the user can modify the schedule
+    Text* days_of_week_text;
+    Text* times_text;
+
     /// Keep track of the last second, to detect minute change
     time_t last_sec_;
     Trigger<> *trigger_ = new Trigger<>();
 
+    /// Enable changed from switch component
+    void on_enable_state_changed(bool enable);
+    
     /// Days of week changed from text component
     void on_days_of_week_state_changed(const std::string& days_of_week);
 
@@ -158,14 +173,37 @@ protected:
  */
 class TaskerText : public Component, public text::Text {
 public:
+    static const char *TAG;
+
     /// Component overrides
     void setup() override;
 
     /// Text have changed
-    void control(const std::string& state);
+    void control(const std::string& state) override;
 
 protected:
     /// Preferences for saving the current text value persistently
+    ESPPreferenceObject pref_;
+};
+
+/* 
+ * Class TaskerSwitch
+ * ----------------
+ * Represents a switch component for use in Tasker.
+ * Extends the Component and switch_::Switch classes.
+ */
+class TaskerSwitch : public Component, public switch_::Switch {
+public:
+    static const char *TAG;
+    
+    /// Component overrides
+    void setup() override;
+
+    /// State have changed
+    void write_state(bool state) override;
+
+protected:
+    /// Preferences for saving the current state value persistently
     ESPPreferenceObject pref_;
 };
 

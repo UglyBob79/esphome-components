@@ -6,8 +6,10 @@
 namespace esphome {
 namespace tasker {
 
-const char *Tasker::TAG = "tasker";
-const char *Schedule::TAG = "schedule";
+const char *Tasker::TAG = "Tasker";
+const char *Schedule::TAG = "Schedule";
+const char *TaskerText::TAG = "TaskerText";
+const char *TaskerSwitch::TAG = "TaskerSwitch";
 
 // Define a mapping from day strings to numerical values
 const std::unordered_map<std::string, int> day_mapping = {
@@ -34,13 +36,13 @@ void populate_days(Schedule& schedule, const std::vector<int> &day_values) {
         schedule.days.is_oddeven = true;
     } else if (day_values[0] == -3) {
         // Set all days
-        schedule.days.raw = 0xFE;
+        schedule.days.raw = TASKER_ALL_DAYS_MASK;
         schedule.days.is_oddeven = false;
     } else {
         schedule.days.is_oddeven = false;
         for (int day : day_values) {
             // Set the corresponding bit
-            schedule.days.raw |= (1 << (day + 1)); 
+            schedule.days.raw |= (1 << day); 
         }        
     }
 }
@@ -59,7 +61,7 @@ void Schedule::loop() {
     uint8_t curr_sec = time.second;
     
     if (curr_sec >= 0 && last_sec_ > curr_sec) {
-        // we prefer mon-sun => 0-6
+        // we prefer mon-sun => 0-6, but esphome use sun-sat 1-7
         int day_of_week = (time.day_of_week + 5) % 7;
 
         check_trigger(day_of_week, time.hour, time.minute);
@@ -73,31 +75,32 @@ void Schedule::dump_config() {
 
 void Schedule::dump() const {
     // TODO Add name param?
-    //ESP_LOGD(TAG, "Schedule ID: %s", get_id());
-    ESP_LOGD(TAG, "Days of Week: %s", days_of_week_text->state.c_str());
-    ESP_LOGD(TAG, "isOddEven: %d", days.is_oddeven);
+    ESP_LOGD(TAG, "Schedule %x {", this);
+    ESP_LOGD(TAG, "  Days of Week: %s", days_of_week_text ? days_of_week_text->state.c_str() : "(null)");
+    ESP_LOGD(TAG, "  isOddEven: %d", days.is_oddeven);
     if (days.is_oddeven) {
-        ESP_LOGD(TAG, "Odd: %d", days.oddeven.odd);
-        ESP_LOGD(TAG, "Even: %d", days.oddeven.even);
+        ESP_LOGD(TAG, "  Odd: %d", days.oddeven.odd);
+        ESP_LOGD(TAG, "  Even: %d", days.oddeven.even);
     } else {
-        ESP_LOGD(TAG, "Mon: %d", days.day.mon);
-        ESP_LOGD(TAG, "Tue: %d", days.day.tue);
-        ESP_LOGD(TAG, "Wed: %d", days.day.wed);
-        ESP_LOGD(TAG, "Thu: %d", days.day.thu);
-        ESP_LOGD(TAG, "Fri: %d", days.day.fri);
-        ESP_LOGD(TAG, "Sat: %d", days.day.sat);
-        ESP_LOGD(TAG, "Sun: %d", days.day.sun);
+        // TODO loop and map
+        ESP_LOGD(TAG, "  Mon: %d", days.day.mon);
+        ESP_LOGD(TAG, "  Tue: %d", days.day.tue);
+        ESP_LOGD(TAG, "  Wed: %d", days.day.wed);
+        ESP_LOGD(TAG, "  Thu: %d", days.day.thu);
+        ESP_LOGD(TAG, "  Fri: %d", days.day.fri);
+        ESP_LOGD(TAG, "  Sat: %d", days.day.sat);
+        ESP_LOGD(TAG, "  Sun: %d", days.day.sun);
     }
-    // TODO loop and map
-
-    ESP_LOGD(TAG, "Times: %s", times_text->state.c_str());
+    ESP_LOGD(TAG, "  Times: %s", times_text ? times_text->state.c_str() : "(null)");
     for (int i = 0; i < time_cnt; i++) {
-         ESP_LOGD(TAG, "Time[%d]: %02d:%02d", i, time[i].hour, time[i].minute);
+         ESP_LOGD(TAG, "  Time[%d]: %02d:%02d", i, time[i].hour, time[i].minute);
     }
+    ESP_LOGD(TAG, "}");
 }
 
 void Schedule::check_trigger(int day_of_week, uint8_t hour, uint8_t minute) {
-    if (check_day_of_week_match(day_of_week) && check_time_match(hour, minute)) {
+    dump();
+    if (enabled && check_day_of_week_match(day_of_week) && check_time_match(hour, minute)) {
         ESP_LOGD(TAG, "Schedule has triggered!");
         trigger_->trigger();
     }
@@ -107,7 +110,7 @@ bool Schedule::check_day_of_week_match(int day_of_week) {
     if (days.is_oddeven) {
         return (days.oddeven.odd && day_of_week % 2 == 1) || (days.oddeven.even && day_of_week % 2 == 0);
     } else {
-        return (1 << (day_of_week + 1)) & days.raw;
+        return (1 << day_of_week) & days.raw;
     }
 }
 
@@ -119,6 +122,12 @@ bool Schedule::check_time_match(uint8_t hour, uint8_t minute) {
         }
     }
     return false;
+}
+
+void Schedule::on_enable_state_changed(bool enable) {
+    ESP_LOGD(TAG, "Schedule enable has changed: %d", enable);
+
+    this->enabled = enable;
 }
 
 void Schedule::on_days_of_week_state_changed(const std::string& days_of_week) {
@@ -244,7 +253,19 @@ void Schedule::on_times_state_changed(const std::string& times) {
     }  
 }
 
+void Schedule::set_enable_switch(Switch *enable_switch) {
+    this->enable_switch = enable_switch;
+    enabled = enable_switch->state;
+
+    // Set up the state change callback for enable_switch
+    enable_switch->add_on_state_callback([this](bool state) {
+        this->on_enable_state_changed(state);
+    });
+}
+
 void Schedule::set_days_of_week_text(Text* days_of_week_text) {
+    this->days_of_week_text = days_of_week_text;
+
     // Set up the state change callback for days_of_week_text
     days_of_week_text->add_on_state_callback([this](std::string state) {
         this->on_days_of_week_state_changed(state);
@@ -252,6 +273,8 @@ void Schedule::set_days_of_week_text(Text* days_of_week_text) {
 }
 
 void Schedule::set_times_text(Text* times_text) {
+    this->times_text = times_text;
+
     // Set up the state change callback for times_text
     times_text->add_on_state_callback([this](std::string state) {
         this->on_times_state_changed(state);
@@ -280,6 +303,27 @@ void TaskerText::control(const std::string& state) {
     strncpy(buffer, state.c_str(), sizeof(buffer));
 
     if (!this->pref_.save(&buffer)) {
+        ESP_LOGD("control", "Could not save state");
+    }
+}
+
+void TaskerSwitch::setup() {
+    this->pref_ = global_preferences->make_preference<bool>(this->get_object_id_hash(), true);
+
+    bool value;
+
+    // TODO Only if restore_mode is set?
+    // TODO Restore mode default?
+    if (this->pref_.load(&value)) {
+        state = value;
+        this->publish_state(state);
+    }
+}
+
+void TaskerSwitch::write_state(bool state) {
+    this->publish_state(state);
+
+    if (!this->pref_.save(&state)) {
         ESP_LOGD("control", "Could not save state");
     }
 }
