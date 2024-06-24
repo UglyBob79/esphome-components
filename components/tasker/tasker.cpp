@@ -13,37 +13,42 @@ const char *TaskerSwitch::TAG = "TaskerSwitch";
 
 // Define a mapping from day strings to numerical values
 const std::unordered_map<std::string, int> day_mapping = {
-    {"MON", 0}, 
-    {"TUE", 1}, 
-    {"WED", 2}, 
-    {"THU", 3}, 
-    {"FRI", 4}, 
-    {"SAT", 5}, 
-    {"SUN", 6}, 
-    {"ODD", -1}, 
-    {"EVEN", -2}, 
-    {"ALL", -3}
+    { "MON", 0},
+    { "TUE", 1},
+    { "WED", 2},
+    { "THU", 3},
+    { "FRI", 4},
+    { "SAT", 5},
+    { "SUN", 6},
+    { "ODD", -1},
+    { "EVEN", -2},
+    { "ALL", -3},
+    { "EOD", -4}
 };
 
 void populate_days(Schedule& schedule, const std::vector<int> &day_values) {
+    // clear old schedule
     schedule.days.raw = 0;
 
     if (day_values[0] == -1) {
-        schedule.days.oddeven.odd = true;
-        schedule.days.is_oddeven = true;
+        schedule.days.special.odd = true;
+        schedule.days.is_special = true;
     } else if (day_values[0] == -2) {
-        schedule.days.oddeven.even = true;
-        schedule.days.is_oddeven = true;
+        schedule.days.special.even = true;
+        schedule.days.is_special = true;
     } else if (day_values[0] == -3) {
         // Set all days
         schedule.days.raw = TASKER_ALL_DAYS_MASK;
-        schedule.days.is_oddeven = false;
+        schedule.days.is_special = false;
+    } else if (day_values[0] == -4) {
+        schedule.days.special.eod = true;
+        schedule.days.is_special = true;
     } else {
-        schedule.days.is_oddeven = false;
+        schedule.days.is_special = false;
         for (int day : day_values) {
             // Set the corresponding bit
-            schedule.days.raw |= (1 << day); 
-        }        
+            schedule.days.raw |= (1 << day);
+        }
     }
 }
 
@@ -59,12 +64,9 @@ void Schedule::loop() {
         return;
 
     uint8_t curr_sec = time.second;
-    
-    if (curr_sec >= 0 && last_sec_ > curr_sec) {
-        // we prefer mon-sun => 0-6, but esphome use sun-sat 1-7
-        int day_of_week = (time.day_of_week + 5) % 7;
 
-        check_trigger(day_of_week, time.hour, time.minute);
+    if (curr_sec >= 0 && last_sec_ > curr_sec) {
+        check_trigger(time);
     }
     last_sec_ = curr_sec;
 }
@@ -77,10 +79,11 @@ void Schedule::dump() const {
     // TODO Add name param?
     ESP_LOGD(TAG, "Schedule %x {", this);
     ESP_LOGD(TAG, "  Days of Week: %s", days_of_week_text ? days_of_week_text->state.c_str() : "(null)");
-    ESP_LOGD(TAG, "  isOddEven: %d", days.is_oddeven);
-    if (days.is_oddeven) {
-        ESP_LOGD(TAG, "  Odd: %d", days.oddeven.odd);
-        ESP_LOGD(TAG, "  Even: %d", days.oddeven.even);
+    ESP_LOGD(TAG, "  is_special: %d", days.is_special);
+    if (days.is_special) {
+        ESP_LOGD(TAG, "  Odd: %d", days.special.odd);
+        ESP_LOGD(TAG, "  Even: %d", days.special.even);
+        ESP_LOGD(TAG, "  EOD: %d", days.special.eod);
     } else {
         // TODO loop and map
         ESP_LOGD(TAG, "  Mon: %d", days.day.mon);
@@ -98,20 +101,30 @@ void Schedule::dump() const {
     ESP_LOGD(TAG, "}");
 }
 
-void Schedule::check_trigger(int day_of_week, uint8_t hour, uint8_t minute) {
-    dump();
-    if (enabled && check_day_of_week_match(day_of_week) && check_time_match(hour, minute)) {
-        ESP_LOGD(TAG, "Schedule has triggered!");
+void Schedule::check_trigger(ESPTime& time) {
+    // we prefer mon-sun => 0-6, but esphome use sun-sat 1-7
+    int day_of_week = (time.day_of_week + 5) % 7;
+
+    // we need the day since the the beginning, for every other day calculation
+    int day_nbr = time.timestamp / (24 * 3600);
+
+    if (enabled && (check_day_of_week_match(day_of_week) || check_eod_match(day_nbr)) && check_time_match(time.hour, time.minute)) {
         trigger_->trigger();
     }
 }
 
 bool Schedule::check_day_of_week_match(int day_of_week) {
-    if (days.is_oddeven) {
-        return (days.oddeven.odd && day_of_week % 2 == 1) || (days.oddeven.even && day_of_week % 2 == 0);
+    if (days.is_special) {
+        return (days.special.odd && day_of_week % 2 == 1) ||
+            (days.special.even && day_of_week % 2 == 0);
+
     } else {
         return (1 << day_of_week) & days.raw;
     }
+}
+
+bool Schedule::check_eod_match(int day_nbr) {
+    return days.special.eod && day_nbr % 2 == 0;
 }
 
 bool Schedule::check_time_match(uint8_t hour, uint8_t minute) {
@@ -154,7 +167,7 @@ void Schedule::on_days_of_week_state_changed(const std::string& days_of_week) {
                 int start_value = start_it->second;
                 int end_value = end_it->second;
                 if (start_value < 0 || end_value < 0) {
-                    success = false; // ODD, EVEN or ALL can't be in ranges
+                    success = false; // ODD, EVEN, ALL or EOD can't be in ranges
                     break;
                 } else if (start_value < end_value) {
                     for (int day = start_value; day <= end_value; ++day) {
@@ -180,18 +193,20 @@ void Schedule::on_days_of_week_state_changed(const std::string& days_of_week) {
                 break;
             }
         }
-    }  
+    }
 
     if (days.size() > 1 && days[0] < 0) {
-         success = false; // ODD, EVEN or ALL can not be combined with other options
+         success = false; // ODD, EVEN, ALL or EOD can not be combined with other options
     }
 
     if (success) {
         populate_days(*this, days);
+
+        dump();
     } else {
         ESP_LOGD(TAG, "Invalid format of days of week");
         return;
-    } 
+    }
 }
 
 void Schedule::on_times_state_changed(const std::string& times) {
@@ -222,7 +237,7 @@ void Schedule::on_times_state_changed(const std::string& times) {
             success = false; // Wrong time format
             break;
         }
-    }   
+    }
 
     if (success) {
         if (time_list.size() > TASKER_MAX_TIMES_CNT) {
@@ -246,11 +261,13 @@ void Schedule::on_times_state_changed(const std::string& times) {
                 this->time_cnt++;
             }
         }
+
+        dump();
     } else {
         ESP_LOGD(TAG, "Invalid format of days of week");
         // TODO Report to user
         return;
-    }  
+    }
 }
 
 void Schedule::set_enable_switch(Switch *enable_switch) {

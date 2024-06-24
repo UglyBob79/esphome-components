@@ -14,7 +14,7 @@ external_components:
 The Tasker component allows you to run automations by making schedules with weekdays and time values.
 
 **Features:**
-- Schedule by weekdays, for example  `MON-FRI`, `ODD` or `EVEN` days. Ranges can be used, as well as multiple items comma separated
+- Schedule by weekdays, for example  `MON-FRI` or special days like `ODD`, `EVEN` and `EOD` (every other day). Ranges can be used, as well as multiple items comma separated
 - Schedule by time values with minute precision, for example `18:00` or `3:45` (max 5 time values per schedule). Multiple values should be comma separated
 - Schedule values will be exposes as text fields, which can be edited for instance from [Home Assistant](https://www.home-assistant.io/)
 - Schedule values are saved on flash for persitence
@@ -30,7 +30,7 @@ Note: This example use sets up two schedules with text components that can be ed
 tasker:
   schedules:
     - id: schedule_1
-      days_of_week: 
+      days_of_week:
         name: Schedule 1 Days
         id: schedule_days_1
       times:
@@ -40,7 +40,7 @@ tasker:
         then:
           - logger.log: "Schedule 1 triggered"
     - id: schedule_2
-      days_of_week: 
+      days_of_week:
         name: Schedule 2 Days
         id: schedule_days_2
       times:
@@ -63,6 +63,7 @@ tasker:
 - Ranges can be used, i.e. `MON-FRI`
 - Multiple values comma separated, i.e. `MON-THU,SUN`
 - Special day values `ODD` or `EVEN` can be used to trigger on odd or even weekdays. Monday is considered the first even day of the week
+- Special day `EOD` can be used to trigger every other day
 - Special day value `ALL` can be used to match every day of the week
 
 #### Limitations
